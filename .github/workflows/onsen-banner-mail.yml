@@ -1,0 +1,103 @@
+name: Send Onsen Banner Email
+
+on:
+  # 매일 00:00 UTC = 09:00 KST
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-and-email:
+    runs-on: ubuntu-latest
+    env:
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: "465"
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      MAIL_TO:   ${{ secrets.MAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests beautifulsoup4 lxml
+
+      - name: Run banner fetch + send email
+        run: |
+          python - <<'PYCODE'
+          import os, re, ssl, smtplib, requests
+          from bs4 import BeautifulSoup
+          from email.mime_text import MIMEText  # type: ignore
+
+          URL = "https://www.onsen.co.nz/experiences/"
+          UA  = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                 "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+          def collapse_ws(s: str) -> str:
+              import re
+              return re.sub(r"\s+", " ", s or "").strip()
+
+          def looks_like_cookie(t: str) -> bool:
+              t = t.lower()
+              return any(x in t for x in ("cookie", "consent", "privacy", "analytics"))
+
+          def extract_banner_texts(html: str):
+              soup = BeautifulSoup(html, "lxml")
+              selectors = ["footer", '[class*="banner"]', '[class*="notice"]']
+              blocks = []
+              for sel in selectors:
+                  for node in soup.select(sel):
+                      txt = collapse_ws(node.get_text(" ", strip=True))
+                      if not txt or len(txt) < 25: 
+                          continue
+                      if looks_like_cookie(txt):
+                          continue
+                      blocks.append(txt)
+              uniq, seen = [], set()
+              for t in blocks:
+                  if t not in seen:
+                      seen.add(t); uniq.append(t)
+              return uniq
+
+          def get_shortest_banner():
+              r = requests.get(URL, headers={"User-Agent": UA}, timeout=20)
+              r.raise_for_status()
+              texts = extract_banner_texts(r.text)
+              if not texts:
+                  return "※ 배너 텍스트를 찾지 못했습니다."
+              texts.sort(key=len)   # [2]에 해당하는 짧은 문구 선택
+              return texts[0]
+
+          def send_email(subject: str, body: str):
+              host = os.environ["SMTP_HOST"]
+              port = int(os.environ["SMTP_PORT"])
+              user = os.environ["SMTP_USER"]
+              pw   = os.environ["SMTP_PASS"]
+              mail_from = os.environ.get("MAIL_FROM", user)
+              mail_to   = os.environ["MAIL_TO"]
+
+              msg = MIMEText(body, _charset="utf-8")
+              msg["Subject"] = subject
+              msg["From"] = mail_from
+              msg["To"] = mail_to
+
+              ctx = ssl.create_default_context()
+              with smtplib.SMTP_SSL(host, port, context=ctx, timeout=30) as server:
+                  server.login(user, pw)
+                  server.send_message(msg)
+
+          banner = get_shortest_banner()
+          subject = "오늘의 Onsen 배너"
+          body = f"{banner}\n\n(출처: {URL})"
+          send_email(subject, body)
+          print("Email sent with banner:", banner)
+          PYCODE
