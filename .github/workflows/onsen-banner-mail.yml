@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install requests beautifulsoup4 lxml
+          python -m pip install requests beautifulsoup4 lxml charset-normalizer chardet
 
       - name: Run banner fetch + send email
         run: |
@@ -41,6 +41,16 @@ jobs:
           URL = "https://www.onsen.co.nz/experiences/"
           UA  = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+                 
+          CANDIDATE_SELECTORS = [
+              '[class*="banner"]','[class*="marquee"]','[class*="ticker"]',
+              '[class*="notice"]','[class*="announcement"]','[data-component*="banner"]',
+              'footer'
+          ]
+          HINT_KEYWORDS = [
+              "availability","cancellation","cancellations","released",
+              "until","up until","live system","booking","sold out",
+          ]
 
           def collapse_ws(s: str) -> str:
               import re
@@ -50,22 +60,30 @@ jobs:
               t = t.lower()
               return any(x in t for x in ("cookie", "consent", "privacy", "analytics"))
 
-          def extract_banner_texts(html: str):
-              soup = BeautifulSoup(html, "lxml")
-              selectors = ["footer", '[class*="banner"]', '[class*="notice"]']
-              blocks = []
-              for sel in selectors:
+          def extract_banner_texts(soup):
+              candidates = []
+              for sel in CANDIDATE_SELECTORS:
                   for node in soup.select(sel):
                       txt = collapse_ws(node.get_text(" ", strip=True))
-                      if not txt or len(txt) < 25: 
-                          continue
-                      if looks_like_cookie(txt):
-                          continue
-                      blocks.append(txt)
+                      if not txt: continue
+                      if looks_like_cookie(txt): continue
+                      if len(txt) < 25: continue
+                      candidates.append(txt)
+
+              def score(t):
+                  tl = t.lower()
+                  return sum(1 for k in HINT_KEYWORDS if k in tl)
+
+              # 중복 제거
               uniq, seen = [], set()
-              for t in blocks:
-                  if t not in seen:
-                      seen.add(t); uniq.append(t)
+              for t in candidates:
+                  key = t.lower()
+                  if key not in seen:
+                      seen.add(key)
+                      uniq.append(t)
+
+              # 힌트 점수로 정렬 (preview와 동일한 순서 정책)
+              uniq.sort(key=score, reverse=True)
               return uniq
 
           def get_shortest_banner():
@@ -83,17 +101,19 @@ jobs:
               texts = extract_banner_texts(r.text)
               if not texts:
                   return "※ 배너 텍스트를 찾지 못했습니다."
-              return texts[0]       # 만약 항목이 하나뿐이면 첫 번째라도 반환
+              if len(texts) >= 1:
+                  return texts[0]   # ✅ [1] 번째 항목
               
           def get_second_banner():
               r = requests.get(URL, headers={"User-Agent": UA}, timeout=20)
               r.raise_for_status()
-              texts = extract_banner_texts(r.text)
+              soup = BeautifulSoup(r.text, "lxml")
+              texts = extract_banner_texts(soup)
               if not texts:
                   return "※ 배너 텍스트를 찾지 못했습니다."
               if len(texts) >= 2:
-                  return texts[1]   # ✅ [2] 번째 항목 (인덱스 1)
-              return texts[0]       # 만약 항목이 하나뿐이면 첫 번째라도 반환
+                  return texts[1]   # ✅ [2] 번째 항목
+              return texts[0]       # 후보가 하나뿐이면 1번째라도 전송
 
           def send_email(subject: str, body: str):
               host = os.environ["SMTP_HOST"]
