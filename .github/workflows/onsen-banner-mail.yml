@@ -3,7 +3,7 @@ name: Send Onsen Banner Email
 on:
   # 매일 00:00 UTC = 09:00 KST
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "38 11 * * *"
   workflow_dispatch: {}
 
 jobs:
