@@ -76,7 +76,15 @@ jobs:
                   return "※ 배너 텍스트를 찾지 못했습니다."
               texts.sort(key=len)   # [2]에 해당하는 짧은 문구 선택
               return texts[0]
-
+              
+          def get_first_banner():
+              r = requests.get(URL, headers={"User-Agent": UA}, timeout=20)
+              r.raise_for_status()
+              texts = extract_banner_texts(r.text)
+              if not texts:
+                  return "※ 배너 텍스트를 찾지 못했습니다."
+              return texts[0]       # 만약 항목이 하나뿐이면 첫 번째라도 반환
+              
           def get_second_banner():
               r = requests.get(URL, headers={"User-Agent": UA}, timeout=20)
               r.raise_for_status()
@@ -104,10 +112,10 @@ jobs:
               with smtplib.SMTP_SSL(host, port, context=ctx, timeout=30) as server:
                   server.login(user, pw)
                   server.send_message(msg)
-
-          banner = get_second_banner()
+          banner1 = get_first_banner()
+          banner2 = get_second_banner()
           subject = "오늘의 Onsen 배너"
-          body = f"{banner}\n\n(출처: {URL})"
+          body = f"{banner1}\n\n{banner2}\n\n(출처: {URL})"
           send_email(subject, body)
           print("Email sent with banner:", banner)
           PYCODE
