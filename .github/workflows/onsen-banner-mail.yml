@@ -31,7 +31,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install requests beautifulsoup4 lxml charset-normalizer chardet
 
-      - name: Run banner fetch + send email ([1] + [2])
+      - name: Run banner fetch + send email ([1] + [2], subject has date)
         run: |
           python - <<'PYCODE'
           import os, re, ssl, smtplib, requests
@@ -52,8 +52,14 @@ jobs:
               "until","up until","live system","booking","sold out",
           ]
 
+          # "31st December 2025" 같은 패턴 추출용 정규식
+          DATE_RE = re.compile(
+              r"\b(\d{1,2})(st|nd|rd|th)?\s+(January|February|March|April|May|June|"
+              r"July|August|September|October|November|December)\s+\d{4}\b",
+              re.IGNORECASE,
+          )
+
           def collapse_ws(s): 
-              import re
               return re.sub(r"\s+", " ", s or "").strip()
 
           def looks_like_cookie(t):
@@ -86,13 +92,23 @@ jobs:
               soup = BeautifulSoup(r.text, "lxml")
               texts = extract_banner_texts(soup)
               if not texts:
-                  return ["※ 배너 텍스트를 찾지 못했습니다."]
-              result = []
-              if len(texts) >= 1:
-                  result.append("[1] " + texts[0])
-              if len(texts) >= 2:
-                  result.append("[2] " + texts[1])
-              return result
+                  return []
+              out = []
+              if len(texts) >= 1: out.append(texts[0])  # [1]
+              if len(texts) >= 2: out.append(texts[1])  # [2]
+              return out
+
+          def find_date_for_subject(text_list):
+              # 우선순위: [2] → [1] → 전체
+              if len(text_list) >= 2:
+                  m = DATE_RE.search(text_list[1])
+                  if m: return m.group(0)
+              if len(text_list) >= 1:
+                  m = DATE_RE.search(text_list[0])
+                  if m: return m.group(0)
+              joined = " ".join(text_list)
+              m = DATE_RE.search(joined)
+              return m.group(0) if m else None
 
           def send_email(subject, body):
               host = os.environ["SMTP_HOST"]
@@ -113,8 +129,24 @@ jobs:
                   server.send_message(msg)
 
           banners = get_banner_1_and_2()
-          subject = "오늘의 Onsen 배너 ([1] + [2])"
-          body = "\n\n".join(banners) + f"\n\n(출처: {URL})"
+          if not banners:
+              subject = "오늘의 Onsen 배너"
+              body = "※ 배너 텍스트를 찾지 못했습니다.\n\n(출처: %s)" % URL
+          else:
+              # 본문은 [1] + [2] 같이 보내기
+              labeled = []
+              if len(banners) >= 1: labeled.append("[1] " + banners[0])
+              if len(banners) >= 2: labeled.append("[2] " + banners[1])
+              body = "\n\n".join(labeled) + f"\n\n(출처: {URL})"
+
+              # 제목에 날짜 붙이기
+              date_str = find_date_for_subject(banners)
+              if date_str:
+                  subject = f"오늘의 Onsen 배너 – {date_str}"
+              else:
+                  subject = "오늘의 Onsen 배너"
+
           send_email(subject, body)
-          print("Email sent with banners:\n", body)
+          print("Email sent with subject:", subject)
           PYCODE
+
