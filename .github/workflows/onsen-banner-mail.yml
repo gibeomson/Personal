@@ -1,9 +1,12 @@
 name: Send Onsen Banner Email
 
 on:
-  # 매일 00:00 UTC = 09:00 KST
+  # 00:00 UTC = 09:00 KST
   schedule:
-    - cron: "41 11 * * *"
+    - cron: "0 0 * * *"
+    - cron: "0 6 * * *"
+    - cron: "0 12 * * *"
+    - cron: "0 18 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -116,17 +119,20 @@ jobs:
               user = os.environ["SMTP_USER"]
               pw   = os.environ["SMTP_PASS"]
               mail_from = os.environ.get("MAIL_FROM", user)
-              mail_to   = os.environ["MAIL_TO"]
-
+              
+              # 여러 수신자 지원: 쉼표/세미콜론 구분
+              raw_to = os.environ["MAIL_TO"]
+              recipients = [addr.strip() for addr in re.split(r"[;,]", raw_to) if addr.strip()]
+          
               msg = MIMEText(body, _charset="utf-8")
               msg["Subject"] = subject
               msg["From"] = mail_from
-              msg["To"] = mail_to
-
+              msg["To"] = ", ".join(recipients)   # 헤더 표시용
+          
               ctx = ssl.create_default_context()
               with smtplib.SMTP_SSL(host, port, context=ctx, timeout=30) as server:
                   server.login(user, pw)
-                  server.send_message(msg)
+                  server.sendmail(mail_from, recipients, msg.as_string())  # 실제 발송 대상 리스트
 
           banners = get_banner_1_and_2()
           if not banners:
