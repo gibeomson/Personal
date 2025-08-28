@@ -36,7 +36,7 @@ jobs:
           python - <<'PYCODE'
           import os, re, ssl, smtplib, requests
           from bs4 import BeautifulSoup
-          from email.mime_text import MIMEText  # type: ignore
+          from email.mime.text import MIMEText  # type: ignore
 
           URL = "https://www.onsen.co.nz/experiences/"
           UA  = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
