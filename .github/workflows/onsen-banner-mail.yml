@@ -117,5 +117,6 @@ jobs:
           subject = "오늘의 Onsen 배너"
           body = f"{banner1}\n\n{banner2}\n\n(출처: {URL})"
           send_email(subject, body)
-          print("Email sent with banner:", banner)
+          print("Email sent with banner:", banner1)
+          print("Email sent with banner:", banner2)
           PYCODE
