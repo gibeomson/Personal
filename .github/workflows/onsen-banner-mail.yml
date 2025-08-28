@@ -77,6 +77,16 @@ jobs:
               texts.sort(key=len)   # [2]에 해당하는 짧은 문구 선택
               return texts[0]
 
+          def get_second_banner():
+              r = requests.get(URL, headers={"User-Agent": UA}, timeout=20)
+              r.raise_for_status()
+              texts = extract_banner_texts(r.text)
+              if not texts:
+                  return "※ 배너 텍스트를 찾지 못했습니다."
+              if len(texts) >= 2:
+                  return texts[1]   # ✅ [2] 번째 항목 (인덱스 1)
+              return texts[0]       # 만약 항목이 하나뿐이면 첫 번째라도 반환
+
           def send_email(subject: str, body: str):
               host = os.environ["SMTP_HOST"]
               port = int(os.environ["SMTP_PORT"])
@@ -95,7 +105,7 @@ jobs:
                   server.login(user, pw)
                   server.send_message(msg)
 
-          banner = get_shortest_banner()
+          banner = get_second_banner()
           subject = "오늘의 Onsen 배너"
           body = f"{banner}\n\n(출처: {URL})"
           send_email(subject, body)
